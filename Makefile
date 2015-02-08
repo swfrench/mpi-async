@@ -5,7 +5,7 @@ LDFLAGS = -fno-PIE
 all : example.x
 
 example.x : example.o async.o
-	$(CXX) $(LDFLAGS) $? -o $@
+	$(CXX) $(LDFLAGS) example.o async.o -o $@
 
 .PHONY : clean
 clean:
