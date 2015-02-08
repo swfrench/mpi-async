@@ -10,3 +10,7 @@ example.x : example.o async.o
 .PHONY : clean
 clean:
 	rm -f async.o example.o
+
+.PHONY: distclean
+distclean: clean
+	rm -f example.x
