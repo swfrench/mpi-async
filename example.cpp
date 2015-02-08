@@ -7,7 +7,7 @@
 void
 func0()
 {
-  printf("[%s] hello\n", __func__);
+  printf("[%s] hello!\n", __func__);
 }
 
 void
@@ -38,6 +38,9 @@ main(int argc, char **argv)
   async((rank + 1) % size, func0);
   async((rank + 1) % size, func1, 1);
   async((rank + 1) % size, func2, 1, 2);
+  async((rank + 1) % size, [rank] () {
+    printf("i'm a lambda shipped from rank %i!\n", rank);
+  });
   async_disable();
 
   MPI_Finalize();
