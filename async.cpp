@@ -31,9 +31,9 @@ typedef unsigned char byte;
 
 struct task
 {
-	int rank;  // sender or receiver, depending on which queue
-	byte *task_data;
-	task(int d, byte *t) : rank(d), task_data(t) {}
+  int rank;  // sender or receiver, depending on which queue
+  byte *task_data;
+  task(int d, byte *t) : rank(d), task_data(t) {}
 };
 
 static std::thread *th_progress;
@@ -56,9 +56,9 @@ static MPI_Comm my_comm;
  */
 void execute(byte *task_data)
 {
-	fptr rp = *(fptr *)task_data;
-	void *tp = (void *)(task_data + sizeof(fptr));
-	rp(tp);
+  fptr rp = *(fptr *)task_data;
+  void *tp = (void *)(task_data + sizeof(fptr));
+  rp(tp);
 }
 
 /*
@@ -68,25 +68,25 @@ void execute(byte *task_data)
  */
 void enqueue(int target, fptr rp, void *tp, size_t sz)
 {
-	byte *task_data;
+  byte *task_data;
 
-	assert(sz + sizeof(fptr) <= ASYNC_MSG_SIZE);
-	task_data = new byte[ASYNC_MSG_SIZE];
+  assert(sz + sizeof(fptr) <= ASYNC_MSG_SIZE);
+  task_data = new byte[ASYNC_MSG_SIZE];
 
-	memcpy(task_data, (void *)&rp, sizeof(fptr));
-	memcpy(task_data + sizeof(fptr), tp, sz);
+  memcpy(task_data, (void *)&rp, sizeof(fptr));
+  memcpy(task_data + sizeof(fptr), tp, sz);
 
-	if (target == my_rank) {
-		task_queue_mtx.lock();
-		task_queue.push_back(new task(target, task_data));
-		task_queue_mtx.unlock();
-	} else {
-		outgoing_task_queue_mtx.lock();
-		outgoing_task_queue.push_back(new task(target, task_data));
-		outgoing_task_queue_mtx.unlock();
-	}
+  if (target == my_rank) {
+    task_queue_mtx.lock();
+    task_queue.push_back(new task(target, task_data));
+    task_queue_mtx.unlock();
+  } else {
+    outgoing_task_queue_mtx.lock();
+    outgoing_task_queue.push_back(new task(target, task_data));
+    outgoing_task_queue_mtx.unlock();
+  }
 
-	cb_count++;
+  cb_count++;
 }
 
 /*
@@ -106,84 +106,84 @@ void enqueue(int target, fptr rp, void *tp, size_t sz)
  */
 void progress()
 {
-	MPI_Request t_req, cb_req;
-	byte task_data_in[ASYNC_MSG_SIZE];
-	mpi_assert(MPI_Irecv(task_data_in, ASYNC_MSG_SIZE, MPI_BYTE,
-	                     MPI_ANY_SOURCE, ASYNC_TAG_ENQUEUE,
-			     my_comm, &t_req));
-	mpi_assert(MPI_Irecv(NULL, 0, MPI_BYTE,
-	                     MPI_ANY_SOURCE, ASYNC_TAG_DECREMENT,
-			     my_comm, &cb_req));
-	while (! done) {
-		int have_msg;
-		MPI_Status stat;
-		task *msg;
-		byte *task_data;
+  MPI_Request t_req, cb_req;
+  byte task_data_in[ASYNC_MSG_SIZE];
+  mpi_assert(MPI_Irecv(task_data_in, ASYNC_MSG_SIZE, MPI_BYTE,
+                       MPI_ANY_SOURCE, ASYNC_TAG_ENQUEUE,
+                       my_comm, &t_req));
+  mpi_assert(MPI_Irecv(NULL, 0, MPI_BYTE,
+                       MPI_ANY_SOURCE, ASYNC_TAG_DECREMENT,
+                       my_comm, &cb_req));
+  while (! done) {
+    int have_msg;
+    MPI_Status stat;
+    task *msg;
+    byte *task_data;
 
-		// service incoming tasks (enqueue them for execution)
-		mpi_assert(MPI_Test(&t_req, &have_msg, &stat));
-		if (have_msg) {
-			task_data = new byte[ASYNC_MSG_SIZE];
-			memcpy(task_data, task_data_in, ASYNC_MSG_SIZE);
-			task_queue_mtx.lock();
-			task_queue.push_back(new task(stat.MPI_SOURCE,
-			                              task_data));
-			task_queue_mtx.unlock();
-			mpi_assert(MPI_Irecv(task_data_in,
-			                     ASYNC_MSG_SIZE, MPI_BYTE,
-					     MPI_ANY_SOURCE, ASYNC_TAG_ENQUEUE,
-					     my_comm, &t_req));
-		}
+    // service incoming tasks (enqueue them for execution)
+    mpi_assert(MPI_Test(&t_req, &have_msg, &stat));
+    if (have_msg) {
+      task_data = new byte[ASYNC_MSG_SIZE];
+      memcpy(task_data, task_data_in, ASYNC_MSG_SIZE);
+      task_queue_mtx.lock();
+      task_queue.push_back(new task(stat.MPI_SOURCE,
+                                    task_data));
+      task_queue_mtx.unlock();
+      mpi_assert(MPI_Irecv(task_data_in,
+                           ASYNC_MSG_SIZE, MPI_BYTE,
+                           MPI_ANY_SOURCE, ASYNC_TAG_ENQUEUE,
+                           my_comm, &t_req));
+    }
 
-		// service incoming callback decrements
-		mpi_assert(MPI_Test(&cb_req, &have_msg, &stat));
-		if (have_msg) {
-			cb_count--;
-			mpi_assert(MPI_Irecv(NULL, 0, MPI_BYTE,
-					     MPI_ANY_SOURCE, ASYNC_TAG_DECREMENT,
-					     my_comm, &cb_req));
-		}
+    // service incoming callback decrements
+    mpi_assert(MPI_Test(&cb_req, &have_msg, &stat));
+    if (have_msg) {
+      cb_count--;
+      mpi_assert(MPI_Irecv(NULL, 0, MPI_BYTE,
+                           MPI_ANY_SOURCE, ASYNC_TAG_DECREMENT,
+                           my_comm, &cb_req));
+    }
 
-		// send outgoing tasks
-		msg = NULL;
-		outgoing_task_queue_mtx.lock();
-		if (! outgoing_task_queue.empty()) {
-			msg = outgoing_task_queue.front();
-			outgoing_task_queue.pop_front();
-		}
-		outgoing_task_queue_mtx.unlock();
-		if (msg != NULL) {
-			mpi_assert(MPI_Send(msg->task_data,
-			                    ASYNC_MSG_SIZE, MPI_BYTE,
-					    msg->rank, ASYNC_TAG_ENQUEUE,
-					    my_comm));
-			delete [] msg->task_data;
-			delete msg;
-		}
+    // send outgoing tasks
+    msg = NULL;
+    outgoing_task_queue_mtx.lock();
+    if (! outgoing_task_queue.empty()) {
+      msg = outgoing_task_queue.front();
+      outgoing_task_queue.pop_front();
+    }
+    outgoing_task_queue_mtx.unlock();
+    if (msg != NULL) {
+      mpi_assert(MPI_Send(msg->task_data,
+                          ASYNC_MSG_SIZE, MPI_BYTE,
+                          msg->rank, ASYNC_TAG_ENQUEUE,
+                          my_comm));
+      delete [] msg->task_data;
+      delete msg;
+    }
 
-		// execute enqueued task, possibly sending callback decrement op
-		msg = NULL;
-		task_queue_mtx.lock();
-		if (! task_queue.empty()) {
-			msg = task_queue.front();
-			task_queue.pop_front();
-		}
-		task_queue_mtx.unlock();
-		if (msg != NULL) {
-			execute(msg->task_data);
-			if (msg->rank == my_rank)
-				cb_count--;
-			else
-				mpi_assert(MPI_Send(NULL, 0, MPI_BYTE,
-				                    msg->rank, ASYNC_TAG_DECREMENT,
-				                    my_comm));
-			delete [] msg->task_data;
-			delete msg;
-		}
-	}
-	// exiting: cancel the outstanding receives
-	mpi_assert(MPI_Cancel(&t_req));
-	mpi_assert(MPI_Cancel(&cb_req));
+    // execute enqueued task, possibly sending callback decrement op
+    msg = NULL;
+    task_queue_mtx.lock();
+    if (! task_queue.empty()) {
+      msg = task_queue.front();
+      task_queue.pop_front();
+    }
+    task_queue_mtx.unlock();
+    if (msg != NULL) {
+      execute(msg->task_data);
+      if (msg->rank == my_rank)
+        cb_count--;
+      else
+        mpi_assert(MPI_Send(NULL, 0, MPI_BYTE,
+                            msg->rank, ASYNC_TAG_DECREMENT,
+                            my_comm));
+      delete [] msg->task_data;
+      delete msg;
+    }
+  }
+  // exiting: cancel the outstanding receives
+  mpi_assert(MPI_Cancel(&t_req));
+  mpi_assert(MPI_Cancel(&cb_req));
 }
 
 /*
@@ -192,18 +192,18 @@ void progress()
  */
 void async_enable(MPI_Comm comm)
 {
-	int mpi_init, mpi_thread;
-	mpi_assert(MPI_Initialized(&mpi_init));
-	assert(mpi_init);
-	mpi_assert(MPI_Query_thread(&mpi_thread));
-	assert(mpi_thread == MPI_THREAD_MULTIPLE);
+  int mpi_init, mpi_thread;
+  mpi_assert(MPI_Initialized(&mpi_init));
+  assert(mpi_init);
+  mpi_assert(MPI_Query_thread(&mpi_thread));
+  assert(mpi_thread == MPI_THREAD_MULTIPLE);
 
-	my_comm = comm;
-	mpi_assert(MPI_Comm_rank(my_comm, &my_rank));
+  my_comm = comm;
+  mpi_assert(MPI_Comm_rank(my_comm, &my_rank));
 
-	th_progress = new std::thread(progress);
+  th_progress = new std::thread(progress);
 
-	mpi_assert(MPI_Barrier(my_comm));
+  mpi_assert(MPI_Barrier(my_comm));
 }
 
 /*
@@ -212,9 +212,9 @@ void async_enable(MPI_Comm comm)
  */
 void async_disable()
 {
-	while (cb_count) {};
-	mpi_assert(MPI_Barrier(my_comm));
-	done = true;
-	th_progress->join();
-	delete th_progress;
+  while (cb_count) {};
+  mpi_assert(MPI_Barrier(my_comm));
+  done = true;
+  th_progress->join();
+  delete th_progress;
 }
